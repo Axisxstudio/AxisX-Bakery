@@ -1,6 +1,6 @@
 export const WHATSAPP_NUMBER = "94771354761";
 
-type WhatsAppIntent = "order" | "inquiry";
+type WhatsAppIntent = "order" | "inquiry" | "feedback";
 
 type WhatsAppMessageParams = {
   intent: WhatsAppIntent;
@@ -19,7 +19,11 @@ export const buildWhatsAppMessage = ({
 }: WhatsAppMessageParams): string => {
   const lines = [
     "Hello AxisX Bakery team,",
-    intent === "order" ? "I would like to place an order." : "I would like to make an inquiry.",
+    intent === "order"
+      ? "I would like to place an order."
+      : intent === "feedback"
+        ? "I would like to share feedback."
+        : "I would like to make an inquiry.",
   ];
 
   if (item) lines.push(`Item/Service: ${item}`);

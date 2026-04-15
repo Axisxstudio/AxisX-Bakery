@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeftRight, Filter, Quote, Star, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence, PanInfo } from "framer-motion";
+import { ArrowLeftRight, ChevronLeft, ChevronRight, Filter, Quote, Star, X } from "lucide-react";
+import { createWhatsAppLink } from "@/lib/whatsapp";
 import SectionHeading from "./SectionHeading";
 
 const testimonials = [
@@ -11,11 +12,32 @@ const testimonials = [
   { name: "Sneha Patel", role: "Anniversary Cake", rating: 5, text: "Quick response on WhatsApp, beautiful design, and amazing taste. My go-to bakery for every celebration. The red velvet is to die for!" },
 ];
 
+const slideVariants = {
+  enter: (direction: number) => ({
+    x: direction > 0 ? 120 : -120,
+    opacity: 0,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+  },
+  exit: (direction: number) => ({
+    x: direction < 0 ? 120 : -120,
+    opacity: 0,
+  }),
+};
+
 const Testimonials = () => {
   const [isReversed, setIsReversed] = useState(false);
   const [selectedRating, setSelectedRating] = useState<number | "all">("all");
   const [showAllReviewsModal, setShowAllReviewsModal] = useState(false);
   const [activeReview, setActiveReview] = useState<(typeof testimonials)[number] | null>(null);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [slideDirection, setSlideDirection] = useState(0);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackName, setFeedbackName] = useState("");
+  const [feedbackRating, setFeedbackRating] = useState(5);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
 
   const allFilteredTestimonials = useMemo(() => {
     const byRating = selectedRating === "all"
@@ -25,15 +47,64 @@ const Testimonials = () => {
     return isReversed ? [...byRating].reverse() : byRating;
   }, [isReversed, selectedRating]);
 
-  const filteredTestimonials = useMemo(
-    () => allFilteredTestimonials.slice(0, 4),
+  const len = allFilteredTestimonials.length;
+  const currentReview = len > 0 ? allFilteredTestimonials[carouselIndex] : null;
+
+  const scrollingTestimonials = useMemo(
+    () => (allFilteredTestimonials.length > 0 ? [...allFilteredTestimonials, ...allFilteredTestimonials] : []),
     [allFilteredTestimonials],
   );
 
-  const scrollingTestimonials = useMemo(
-    () => (filteredTestimonials.length > 0 ? [...filteredTestimonials, ...filteredTestimonials] : []),
-    [filteredTestimonials],
+  useEffect(() => {
+    setCarouselIndex(0);
+    setSlideDirection(0);
+  }, [isReversed, selectedRating]);
+
+  useEffect(() => {
+    if (carouselIndex >= len && len > 0) {
+      setCarouselIndex(len - 1);
+    }
+  }, [carouselIndex, len]);
+
+  const goTo = useCallback(
+    (nextIndex: number, dir: number) => {
+      if (len === 0) return;
+      const wrapped = ((nextIndex % len) + len) % len;
+      setSlideDirection(dir);
+      setCarouselIndex(wrapped);
+    },
+    [len],
   );
+
+  const goNext = useCallback(() => goTo(carouselIndex + 1, 1), [carouselIndex, goTo, len]);
+  const goPrev = useCallback(() => goTo(carouselIndex - 1, -1), [carouselIndex, goTo, len]);
+
+  const onDragEnd = useCallback(
+    (_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (info.offset.x < -60) goTo(carouselIndex + 1, 1);
+      else if (info.offset.x > 60) goTo(carouselIndex - 1, -1);
+    },
+    [carouselIndex, goTo],
+  );
+
+  const submitFeedback = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = feedbackName.trim() || "Customer";
+    const message = feedbackMessage.trim();
+    if (!message) return;
+    const notes = [`Name: ${name}`, `Rating: ${feedbackRating}/5`, "", message].join("\n");
+    const url = createWhatsAppLink({
+      intent: "feedback",
+      item: "Website feedback",
+      section: "Testimonials",
+      notes,
+    });
+    window.open(url, "_blank", "noopener,noreferrer");
+    setShowFeedbackModal(false);
+    setFeedbackName("");
+    setFeedbackRating(5);
+    setFeedbackMessage("");
+  };
 
   return (
     <section id="testimonials" className="section-padding section-theme-testimonials relative overflow-hidden">
@@ -49,7 +120,7 @@ const Testimonials = () => {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-bakery-gold/20 text-sm font-body text-foreground/80 hover:text-accent hover:border-bakery-gold/40 transition-colors"
           >
             <ArrowLeftRight size={16} />
-            Swap Direction
+            Swap Order
           </button>
 
           <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-bakery-gold/20">
@@ -75,7 +146,105 @@ const Testimonials = () => {
           </div>
         </div>
 
-        <div className="overflow-hidden pb-2">
+        <p className="text-center text-xs text-muted-foreground mb-4 md:hidden">
+          Swipe the card or use arrows to browse feedback.
+        </p>
+
+        {/* Swipeable carousel: mobile only */}
+        <div className="relative max-w-xl mx-auto px-12 sm:px-14 md:hidden">
+          <button
+            type="button"
+            onClick={goPrev}
+            disabled={len <= 1}
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full border border-bakery-gold/25 bg-background/80 text-foreground/80 hover:text-accent hover:border-bakery-gold/50 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            aria-label="Previous feedback"
+          >
+            <ChevronLeft size={22} />
+          </button>
+          <button
+            type="button"
+            onClick={goNext}
+            disabled={len <= 1}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full border border-bakery-gold/25 bg-background/80 text-foreground/80 hover:text-accent hover:border-bakery-gold/50 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            aria-label="Next feedback"
+          >
+            <ChevronRight size={22} />
+          </button>
+
+          <div className="overflow-hidden min-h-[320px] sm:min-h-[300px]">
+            {currentReview && (
+              <AnimatePresence mode="wait" custom={slideDirection} initial={false}>
+                <motion.div
+                  key={`${carouselIndex}-${currentReview.name}-${currentReview.role}`}
+                  custom={slideDirection}
+                  variants={slideVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                  drag="x"
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.85}
+                  onDragEnd={onDragEnd}
+                  className="cursor-grab active:cursor-grabbing"
+                >
+                  <motion.button
+                    type="button"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35 }}
+                    whileHover={{ y: -4, transition: { duration: 0.25 } }}
+                    onClick={() => setActiveReview(currentReview)}
+                    className="card-luxury p-7 lg:p-9 rounded-3xl relative text-left w-full cursor-pointer"
+                  >
+                    <Quote size={32} className="text-bakery-gold/15 absolute top-6 right-6" />
+                    <div className="flex gap-1 mb-5">
+                      {Array.from({ length: currentReview.rating }).map((_, j) => (
+                        <Star key={j} size={15} className="fill-accent text-accent" />
+                      ))}
+                    </div>
+                    <p className="text-foreground/75 font-body text-sm leading-relaxed mb-7 italic font-light line-clamp-6">
+                      "{currentReview.text}"
+                    </p>
+                    <div className="flex items-center gap-3 pt-5 border-t border-bakery-gold/10">
+                      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-bakery-gold/30 to-bakery-gold/10 flex items-center justify-center text-accent font-heading font-bold text-sm">
+                        {currentReview.name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")}
+                      </div>
+                      <div>
+                        <p className="font-body font-semibold text-sm text-foreground">{currentReview.name}</p>
+                        <p className="text-muted-foreground text-xs font-light">{currentReview.role}</p>
+                      </div>
+                    </div>
+                  </motion.button>
+                </motion.div>
+              </AnimatePresence>
+            )}
+          </div>
+
+          {len > 1 && (
+            <div className="flex justify-center gap-2 mt-6" role="tablist" aria-label="Feedback slides">
+              {allFilteredTestimonials.map((t, i) => (
+                <button
+                  key={`${t.name}-${t.role}-${i}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={i === carouselIndex}
+                  onClick={() => goTo(i, i > carouselIndex ? 1 : -1)}
+                  className={`h-2 rounded-full transition-all ${
+                    i === carouselIndex ? "w-8 bg-accent" : "w-2 bg-bakery-gold/25 hover:bg-bakery-gold/45"
+                  }`}
+                  aria-label={`Show feedback ${i + 1} of ${len}`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Desktop: auto-scrolling strip (no swipe UI) */}
+        <div className="hidden md:block overflow-hidden pb-2">
           <motion.div
             className="flex items-stretch gap-6 w-max"
             animate={{ x: isReversed ? ["-50%", "0%"] : ["0%", "-50%"] }}
@@ -84,11 +253,11 @@ const Testimonials = () => {
             {scrollingTestimonials.map((t, i) => (
               <motion.button
                 type="button"
-                key={`${t.name}-${i}`}
+                key={`${t.name}-desktop-${i}`}
                 initial={{ opacity: 0, x: 30 }}
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.1, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                transition={{ delay: (i % 5) * 0.1, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
                 whileHover={{ y: -5, transition: { duration: 0.3 } }}
                 onClick={() => setActiveReview(t)}
                 className="card-luxury p-7 lg:p-9 rounded-3xl relative text-left w-[300px] sm:w-[340px] lg:w-[360px] shrink-0 cursor-pointer"
@@ -99,7 +268,9 @@ const Testimonials = () => {
                     <Star key={j} size={15} className="fill-accent text-accent" />
                   ))}
                 </div>
-                <p className="text-foreground/75 font-body text-sm leading-relaxed mb-7 italic font-light line-clamp-4">"{t.text}"</p>
+                <p className="text-foreground/75 font-body text-sm leading-relaxed mb-7 italic font-light line-clamp-4">
+                  "{t.text}"
+                </p>
                 <div className="flex items-center gap-3 pt-5 border-t border-bakery-gold/10">
                   <div className="w-11 h-11 rounded-full bg-gradient-to-br from-bakery-gold/30 to-bakery-gold/10 flex items-center justify-center text-accent font-heading font-bold text-sm">
                     {t.name
@@ -117,17 +288,18 @@ const Testimonials = () => {
           </motion.div>
         </div>
 
-        {filteredTestimonials.length === 0 && (
+        {len === 0 && (
           <p className="text-center text-sm text-muted-foreground mt-6">No reviews found for this rating.</p>
         )}
 
         <div className="flex flex-wrap justify-center gap-3 mt-8">
-          <a
-            href="#contact"
+          <button
+            type="button"
+            onClick={() => setShowFeedbackModal(true)}
             className="inline-flex items-center justify-center px-5 py-3 rounded-xl border border-bakery-gold/30 text-sm font-body text-foreground/80 hover:text-accent hover:border-bakery-gold/60 transition-colors"
           >
             Add Feedback
-          </a>
+          </button>
           <button
             type="button"
             onClick={() => setShowAllReviewsModal(true)}
@@ -139,6 +311,95 @@ const Testimonials = () => {
       </div>
 
       <AnimatePresence>
+        {showFeedbackModal && (
+          <motion.div
+            className="fixed inset-0 z-[75] bg-black/45 p-4 sm:p-6 flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowFeedbackModal(false)}
+          >
+            <div className="absolute inset-0 backdrop-blur-md" />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.2 }}
+              onClick={(event) => event.stopPropagation()}
+              className="card-luxury rounded-3xl p-6 sm:p-8 w-full max-w-md relative z-[1]"
+            >
+              <button
+                type="button"
+                onClick={() => setShowFeedbackModal(false)}
+                className="absolute top-4 right-4 text-foreground/70 hover:text-accent transition-colors"
+                aria-label="Close feedback form"
+              >
+                <X size={18} />
+              </button>
+              <h3 className="font-heading text-xl sm:text-2xl text-foreground mb-2">Share Your Feedback</h3>
+              <p className="text-sm text-muted-foreground font-body mb-6">
+                We read every message. Submit opens WhatsApp with your feedback prefilled.
+              </p>
+              <form onSubmit={submitFeedback} className="space-y-5">
+                <div>
+                  <label htmlFor="feedback-name" className="block text-xs font-body font-medium text-foreground/80 mb-1.5">
+                    Your name
+                  </label>
+                  <input
+                    id="feedback-name"
+                    type="text"
+                    value={feedbackName}
+                    onChange={(e) => setFeedbackName(e.target.value)}
+                    placeholder="e.g. Priya"
+                    className="w-full rounded-xl border border-bakery-gold/20 bg-background/50 px-4 py-3 text-sm font-body text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-bakery-gold/30"
+                  />
+                </div>
+                <div>
+                  <span className="block text-xs font-body font-medium text-foreground/80 mb-2">Rating</span>
+                  <div className="flex gap-1" role="group" aria-label="Star rating">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setFeedbackRating(star)}
+                        className="p-1 rounded-lg hover:bg-bakery-gold/10 transition-colors"
+                        aria-label={`${star} star${star === 1 ? "" : "s"}`}
+                      >
+                        <Star
+                          size={28}
+                          className={
+                            star <= feedbackRating ? "fill-accent text-accent" : "text-bakery-gold/25 fill-transparent"
+                          }
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="feedback-message" className="block text-xs font-body font-medium text-foreground/80 mb-1.5">
+                    Your feedback <span className="text-destructive">*</span>
+                  </label>
+                  <textarea
+                    id="feedback-message"
+                    required
+                    rows={4}
+                    value={feedbackMessage}
+                    onChange={(e) => setFeedbackMessage(e.target.value)}
+                    placeholder="Tell us about your experience…"
+                    className="w-full rounded-xl border border-bakery-gold/20 bg-background/50 px-4 py-3 text-sm font-body text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-bakery-gold/30 resize-y min-h-[100px]"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl btn-premium text-primary-foreground text-sm font-body"
+                >
+                  Submit
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+
         {showAllReviewsModal && (
           <motion.div
             className="fixed inset-0 z-[70] bg-black/40 p-4 sm:p-6 flex items-center justify-center"
